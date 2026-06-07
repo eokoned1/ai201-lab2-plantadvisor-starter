@@ -52,10 +52,35 @@ def lookup_plant(plant_name: str) -> dict:
 
     Before writing code, complete the lookup_plant section of specs/tool-functions-spec.md.
     """
+    # Normalize first so casing and stray whitespace can never cause a false miss —
+    # "Pothos", "POTHOS", and " pothos " should all resolve to the same entry.
+    normalized = plant_name.strip().lower()
+
+    # Search order goes cheapest to broadest (see the spec): keys are an O(1) dict
+    # hit, so try those first.
+    if normalized in _plant_db:
+        return {"found": True, "plant": _plant_db[normalized]}
+
+    # Fall back to display names, then aliases. We normalize each candidate the same
+    # way we normalized the input, rather than trusting the JSON to already be clean.
+    for plant in _plant_db.values():
+        if plant["display_name"].strip().lower() == normalized:
+            return {"found": True, "plant": plant}
+        if normalized in (alias.strip().lower() for alias in plant["aliases"]):
+            return {"found": True, "plant": plant}
+
+    # Nothing matched. The message here is read by the LLM, not a human — so treat it
+    # as an instruction: tell it not to fabricate data and to degrade gracefully.
     return {
         "found": False,
-        "name": plant_name,
-        "message": "Plant lookup not yet implemented. Complete Milestone 1.",
+        "name": normalized,
+        "message": (
+            f"No plant matching '{plant_name}' was found in the care database. "
+            "Do not invent specific care numbers as if they came from the database. "
+            "Acknowledge to the user that this plant isn't in your database, then offer "
+            "general guidance based on the plant type or what the user described, and "
+            "suggest they confirm specifics with a trusted source."
+        ),
     }
 
 

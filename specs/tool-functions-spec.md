@@ -70,7 +70,19 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 *Aliases are stored as a list of strings. How will you check if the normalized input matches any alias in the list? Write your approach in pseudocode or plain English.*
 
 ```
-[your answer here]
+For each plant entry, lowercase+strip every alias and test membership of the
+normalized input against that collection:
+
+    normalized in (alias.strip().lower() for alias in plant["aliases"])
+
+A generator expression keeps the comparison lazy (stops at the first hit) and
+mirrors the same normalization applied to the input, so casing/whitespace can
+never cause a false miss.
+
+Scaling note: this is O(n·aliases) across the whole DB. If the database grew to
+thousands of plants, I'd build a single lookup dict ONCE at module load that maps
+every key, display name, and alias (all normalized) -> the plant entry. Lookup
+then becomes a single O(1) dict access instead of a full scan per query.
 ```
 
 ---
@@ -80,7 +92,16 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 *When a plant isn't found, the agent will read your message and use it to decide what to tell the user. Write the exact string you'll return — make it useful to the agent, not just to a human reading logs.*
 
 ```
-[your answer here]
+"No plant matching '<plant_name>' was found in the care database. Do not invent
+specific care numbers as if they came from the database. Acknowledge to the user
+that this plant isn't in your database, then offer general guidance based on the
+plant type or what the user described, and suggest they confirm specifics with a
+trusted source."
+
+Rationale: the message isn't a log line — it's an instruction the LLM reads as
+tool output. It names the failure, forbids fabricating data (prevents the
+"confidently wrong" failure mode), and prescribes the graceful-degradation
+behavior we want. "Not found" alone would leave the agent with nothing to act on.
 ```
 
 ---
@@ -91,17 +112,22 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 
 **Test: does `"devil's ivy"` return the pothos entry?**
 ```
-[yes / no — if no, describe what happened]
+Yes — matches via the aliases list ("devil's ivy" is a pothos alias). found: True.
 ```
 
 **Test: does `"SNAKE PLANT"` return the snake plant entry?**
 ```
-[yes / no — if no, describe what happened]
+Yes — lowercasing the input matches the "Snake Plant" display name. found: True.
+Also verified "  Pothos  " (whitespace) and "mother-in-law's tongue" (alias).
 ```
 
 **One edge case you discovered while implementing:**
 ```
-[your answer here]
+The aliases themselves need the same normalization as the input. Several aliases
+in plants.json are stored with apostrophes and mixed phrasing (e.g.
+"mother-in-law's tongue"), so I strip+lowercase each alias at comparison time
+rather than assuming the JSON is already normalized — otherwise a stray case or
+space in the data file would cause a false miss.
 ```
 
 ---
@@ -183,12 +209,13 @@ The full season dict from `_season_data`, plus a `detected_season` boolean. Exam
 
 **Test: does calling with `season=None` return the correct season for the current month?**
 ```
-Current month: [month]
-Expected season: [season]
-Returned season: [season]
+Current month: 6 (June)
+Expected season: summer
+Returned season: Summer  (detected_season: True)
 ```
 
 **Test: does calling with `season="winter"` return winter data regardless of the current month?**
 ```
-[yes / no]
+Yes — passing season="winter" in June returns the winter dict with
+detected_season: False (caller-specified, not auto-detected).
 ```
